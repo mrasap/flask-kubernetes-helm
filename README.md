@@ -29,7 +29,7 @@ github repo: https://github.com/mrasap/flask-kubernetes-helm/
 [X] Automated the complete deployment with a bash script   
 [X] Ingress load balancer with nginx-ingress   
 [X] TLS support with cert-manager   
-[] Upgrade cert-manager to latest build   
+[] Upgrade cert-manager to latest build (see https://github.com/jetstack/cert-manager/issues/1255)   
 [] Kubernetes StateFulSet   
 [] Kubernetes namespaces   
 [] Kubernetes rbac   
