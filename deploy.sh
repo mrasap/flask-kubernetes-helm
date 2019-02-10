@@ -30,15 +30,24 @@ echo "Dry run settings set to $DRY_RUN"
 helm repo update
 
 # Ensure that we have an nginx ingress controller on the cluster
-helm install stable/nginx-ingress --name my-nginx $DRY_RUN --set defaultBackend.enabled=false,controller.defaultBackendService="default/$1-flask-demo"
+helm install stable/nginx-ingress --name my-nginx $DRY_RUN \
+	--set defaultBackend.enabled=false \
+	--set controller.defaultBackendService="default/$1-flask-demo"
 echo "
 ######################################
 Created the nginx-ingress
 ######################################
 "
 
+# Mandatory CRDs for cert-manager
+# kubectl apply \
+#    -f https://raw.githubusercontent.com/jetstack/cert-manager/release-0.6/deploy/manifests/00-crds.yaml
+
 # Ensure that we have a cert-manager on the cluster
-helm install --name cert-mgr $DRY_RUN stable/cert-manager
+helm install --name cert-mgr $DRY_RUN stable/cert-manager \
+	--version v0.5.2 \
+	--set ingressShim.defaultIssuerName=letsencrypt-prod \
+   	--set ingressShim.defaultIssuerKind=ClusterIssuer
 
 echo "
 ######################################
@@ -48,12 +57,18 @@ Created the cert-manager
 
 # Ensure that we have a certificate cluster issuer
 if ($2); then
+	echo "
+######################################
+Did not create the certificate cluster issuer
+######################################
+"
+else
 	kubectl apply -f cluster-issuer-prod.yaml
 	echo "
-	######################################
-	Created the certificate cluster issuer
-	######################################
-	"
+######################################
+Created the certificate cluster issuer
+######################################
+"
 fi
 
 
