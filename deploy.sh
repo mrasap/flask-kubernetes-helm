@@ -8,44 +8,61 @@
 
 ###########################################
 # COMMAND LINE ARGUMENTS:
-# Expects the name of the app as the first argument
-NAME=$1
-echo "Creating app with name $NAME"
+# See: https://github.com/mrasap/bash-arg-parser
 
-# Expects a boolean to specify if it is a dry-run or not
-# If no boolean is given, it will dry-run by default
-if ($2); then
-	DRY_RUN="--dry-run --debug"
-else 
-	DRY_RUN=""
-fi	
+# Examples:
+# to create an app named 'flask' and deploy it on the kubernetes cluster, call:
+#	bash deploy.sh -n flask
+# to dry-run an app named 'flask' that does not deploy it on the kubernetes cluster, call:
+#	bash deploy.sh -n flask -d
+
+while [[ "$#" -gt 0 ]]; do case $1 in
+  -d|--dry-run) DRY_RUN="--dry-run";;
+  -n|--name) NAME="$2"; shift;;
+  *) echo "Error, unknown parameter passed: $1."; exit 1;;
+esac; shift; done
+
+# Check to see if the name has been given
+if [[ -z ${NAME} ]] || [[ ${NAME} =~ ^-.* ]];
+  then echo "Error, --name is not given. Aborting.."; exit 1;
+fi
+
+echo "Creating app with name $NAME"
 echo "Dry run settings set to $DRY_RUN"
 
-# Example: to create an app named 'flask' and deploy it on the kubernetes cluster, call:
-#	bash deploy.sh flask false
-
 ############################################
+
+## Add the Jetstack Helm repository
+helm repo add jetstack https://charts.jetstack.io
 
 # Ensure that our repo is up to date
 helm repo update
 
+############################################
+
 # Ensure that we have an nginx ingress controller on the cluster
-helm install stable/nginx-ingress --name my-nginx $DRY_RUN \
-	--set defaultBackend.enabled=false \
-	--set controller.defaultBackendService="default/$1-flask-demo"
+helm install stable/nginx-ingress --name nginx-ingress ${DRY_RUN}
+
 echo "
 ######################################
 Created the nginx-ingress
 ######################################
 "
 
-# Mandatory CRDs for cert-manager
-# kubectl apply \
-#    -f https://raw.githubusercontent.com/jetstack/cert-manager/release-0.6/deploy/manifests/00-crds.yaml
+## IMPORTANT: you MUST install the cert-manager CRDs **before** installing the
+## cert-manager Helm chart
+kubectl apply  \
+    -f https://raw.githubusercontent.com/jetstack/cert-manager/release-0.8/deploy/manifests/00-crds.yaml
 
-# Ensure that we have a cert-manager on the cluster
-helm install --name cert-mgr $DRY_RUN stable/cert-manager \
-	--version v0.5.2 \
+# Create a namespace to run cert-manager in
+kubectl create namespace cert-manager ${DRY_RUN}
+
+## IMPORTANT: if the cert-manager namespace **already exists**, you MUST ensure
+## it has an additional label on it in order for the deployment to succeed
+ kubectl label namespace cert-manager certmanager.k8s.io/disable-validation="true" ${DRY_RUN}
+
+## Install the cert-manager helm chart
+helm install --name cert-manager ${DRY_RUN} --namespace cert-manager jetstack/cert-manager \
 	--set ingressShim.defaultIssuerName=letsencrypt-prod \
    	--set ingressShim.defaultIssuerKind=ClusterIssuer
 
@@ -55,27 +72,25 @@ Created the cert-manager
 ######################################
 "
 
-# Ensure that we have a certificate cluster issuer
-if ($2); then
-	echo "
-######################################
-Did not create the certificate cluster issuer
-######################################
-"
-else
-	kubectl apply -f cluster-issuer-prod.yaml
-	echo "
-######################################
-Created the certificate cluster issuer
-######################################
-"
-fi
+# Install the cluster issuer
+kubectl apply -f cluster-issuer-prod.yaml ${DRY_RUN}
 
 
 # Install the helm chart, expects to be in the current directory
-helm install --name $1 $DRY_RUN .
+helm install --name ${NAME} ${DRY_RUN} .
+
 echo "
 ######################################
 Created the app 
 ######################################
+"
+
+echo "
+IMPORTANT NOTICE:
+Make sure to update your DNS A record to redirect your hostname to the (new) external-ip of the ingress controller.
+
+You can find the ingress controller external ip with the command:
+kubectl get svc
+
+It may take a while before an external ip has been given.
 "
